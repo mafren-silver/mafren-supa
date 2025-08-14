@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 export default function AdminIdleReminder({ enabled }: { enabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [needsAttention, setNeedsAttention] = useState(false);
+  const [hasOverdue, setHasOverdue] = useState(false);
   const lastActionRef = useRef<number>(Date.now());
 
   // Theo dõi thao tác người dùng
@@ -36,8 +37,31 @@ export default function AdminIdleReminder({ enabled }: { enabled?: boolean }) {
     };
     apptES.onmessage = (e) => {
       try {
-        const list = JSON.parse(e.data) as Array<{ status?: string }>;
+        const list = JSON.parse(e.data) as Array<{ status?: string; createdAt?: unknown }>;
         apptNeeds = list.some((a) => (a.status || "unprocessed") === "unprocessed");
+        // Overdue if có lịch hẹn unprocessed quá 1 phút
+        const now = Date.now();
+        const oneMinute = 60_000;
+        const toMs = (v: unknown): number | null => {
+          try {
+            if (!v) return null;
+            if (typeof v === "string") {
+              const d = new Date(v);
+              return isNaN(d.getTime()) ? null : d.getTime();
+            }
+            if (typeof (v as { toDate?: () => Date })?.toDate === "function") {
+              return (v as { toDate: () => Date }).toDate().getTime();
+            }
+            if (typeof v === "number") return v;
+            return null;
+          } catch { return null; }
+        };
+        const anyOverdue = list.some((a) => {
+          if ((a.status || "unprocessed") !== "unprocessed") return false;
+          const t = toMs(a.createdAt);
+          return typeof t === "number" && now - t >= oneMinute;
+        });
+        setHasOverdue(anyOverdue);
         recompute();
       } catch {}
     };
@@ -49,6 +73,12 @@ export default function AdminIdleReminder({ enabled }: { enabled?: boolean }) {
     if (!enabled) return;
     const t = setInterval(() => {
       if (document.hidden) return; // không nhắc khi tab ẩn
+      // Nhắc ngay nếu có lịch hẹn quá 1 phút chưa xử lý
+      if (hasOverdue) {
+        setOpen(true);
+        new Audio("/audio/task_reminder.mp3").play().catch(() => {});
+        return;
+      }
       if (!needsAttention) return; // mọi việc đã xử lý xong
       if (Date.now() - lastActionRef.current > 60_000) {
         setOpen(true);
@@ -56,7 +86,7 @@ export default function AdminIdleReminder({ enabled }: { enabled?: boolean }) {
       }
     }, 10_000);
     return () => clearInterval(t);
-  }, [enabled, needsAttention]);
+  }, [enabled, needsAttention, hasOverdue]);
 
   if (!open) return null;
   return (

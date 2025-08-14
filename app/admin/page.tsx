@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import AppointmentNotifier from "@/components/AppointmentNotifier";
+import AdminIdleReminder from "@/components/AdminIdleReminder";
 
 // Rebuilt Admin page: simple, robust, polling-based (no SSE)
 export default function AdminHome() {
@@ -139,6 +140,8 @@ export default function AdminHome() {
 
   return (
     <section className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Nhắc nhở khi bỏ quên lịch hẹn > 1 phút hoặc có việc cần xử lý */}
+      <AdminIdleReminder enabled />
       <AppointmentNotifier />
       <div className="border border-white/10 md:col-span-1 max-h-[65vh] flex flex-col">
         <div className="px-3 py-2 text-sm tracking-wide border-b border-white/10 flex items-center gap-2">
