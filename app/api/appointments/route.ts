@@ -33,7 +33,8 @@ export async function POST(req: NextRequest) {
       createdAt: FieldValue.serverTimestamp(),
     });
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("[api/appointments] POST error:", err);
     return new NextResponse("Lỗi server", { status: 500 });
   }
 }
