@@ -1,23 +1,20 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/firebaseAdmin";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const db = getDb();
-  const snap = await db.collection("appointments").orderBy("scheduledAt", "desc").get();
-  const list = snap.docs.map((d) => {
-    const data = d.data() as Record<string, unknown> & { scheduledAt?: unknown; createdAt?: unknown; status?: string };
-    const scheduledAt = typeof (data.scheduledAt as { toDate?: () => Date })?.toDate === 'function'
-      ? (data.scheduledAt as { toDate: () => Date }).toDate().toISOString()
-      : data.scheduledAt;
-    const createdAt = typeof (data.createdAt as { toDate?: () => Date })?.toDate === 'function'
-      ? (data.createdAt as { toDate: () => Date }).toDate().toISOString()
-      : data.createdAt;
-    return { id: d.id, status: data.status || "unprocessed", ...data, scheduledAt, createdAt };
-  });
-  return NextResponse.json(list);
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("*")
+    .order("scheduledAt", { ascending: false });
+  if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
+  type Row = { id: string; fullName: string; phone: string; email: string | null; note: string | null; scheduledAt: string; status: string | null; createdAt: string | null };
+  const list = (data as Row[] | null) || [];
+  const normalized = list.map((row) => ({ ...row, status: row.status || "unprocessed" }));
+  return NextResponse.json(normalized);
 }
 
 

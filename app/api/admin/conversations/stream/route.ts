@@ -1,26 +1,35 @@
-import { getDb } from "@/lib/firebaseAdmin";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
   const encoder = new TextEncoder();
   let hb: NodeJS.Timeout | undefined;
-  let unsubscribe: (() => void) | undefined;
+  const supabase = getSupabaseAdminClient();
+  const channel = supabase.channel("realtime-conversations");
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const db = getDb();
-      const ref = db.collection("conversations").orderBy("updatedAt", "desc");
-      unsubscribe = ref.onSnapshot((snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* closed */ }
-      });
-      hb = setInterval(() => {
-        try { controller.enqueue(encoder.encode(`: ping\n\n`)); } catch { /* closed */ }
-      }, 25000);
+      const sendSnapshot = async () => {
+        const { data } = await supabase
+          .from("conversations")
+          .select("*")
+          .order("updatedAt", { ascending: false });
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data || [])}\n\n`)); } catch {}
+      };
+      channel
+        .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => {
+          void sendSnapshot();
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await sendSnapshot();
+          }
+        });
+      hb = setInterval(() => { try { controller.enqueue(encoder.encode(`: ping\n\n`)); } catch {} }, 25000);
     },
     cancel() {
       if (hb) clearInterval(hb);
-      try { unsubscribe && unsubscribe(); } catch {}
+      try { supabase.removeChannel(channel); } catch {}
     },
   });
   return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });

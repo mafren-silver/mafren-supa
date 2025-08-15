@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firebaseAdmin";
-import { FieldValue } from "firebase-admin/firestore";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 
 export async function GET(req: NextRequest) {
   const conversationId = req.nextUrl.searchParams.get("conversationId");
   if (!conversationId) return new NextResponse("Thiếu conversationId", { status: 400 });
-
-  const db = getDb();
-  const snap = await db
-    .collection("conversations")
-    .doc(conversationId)
-    .collection("messages")
-    .orderBy("createdAt", "asc")
-    .get();
-
-  const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  return NextResponse.json(msgs);
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("conversationId", conversationId)
+    .order("createdAt", { ascending: true });
+  if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
+  return NextResponse.json(data || []);
 }
 
 export async function POST(req: NextRequest) {
@@ -30,27 +26,42 @@ export async function POST(req: NextRequest) {
   if (!conversationId || !sender || (!content && !attachmentUrl)) {
     return new NextResponse("Thiếu dữ liệu", { status: 400 });
   }
-
-  const db = getDb();
-  const ref = db.collection("conversations").doc(conversationId);
-  // Upsert conversation metadata to avoid NOT_FOUND when the doc was deleted or not yet created
+  const supabase = getSupabaseAdminClient();
   const lastPreview = content ? String(content).slice(0, 120) : attachmentType || "attachment";
-  await ref.set(
-    {
-      updatedAt: FieldValue.serverTimestamp(),
-      unreadForAdmin: sender === "CUSTOMER" ? FieldValue.increment(1) : FieldValue.increment(0),
-      lastMessagePreview: lastPreview,
-    },
-    { merge: true }
-  );
-
-  await ref.collection("messages").add({
+  // Update conversation metadata; increment unreadForAdmin when customer sends
+  if (sender === "CUSTOMER") {
+    const { data: current } = await supabase
+      .from("conversations")
+      .select("unreadForAdmin")
+      .eq("id", conversationId)
+      .single();
+    const nextUnread = (typeof current?.unreadForAdmin === "number" ? current.unreadForAdmin : 0) + 1;
+    await supabase
+      .from("conversations")
+      .update({
+        updatedAt: new Date().toISOString(),
+        unreadForAdmin: nextUnread,
+        lastMessagePreview: lastPreview,
+      })
+      .eq("id", conversationId);
+  } else {
+    await supabase
+      .from("conversations")
+      .update({
+        updatedAt: new Date().toISOString(),
+        lastMessagePreview: lastPreview,
+      })
+      .eq("id", conversationId);
+  }
+  const { error } = await supabase.from("messages").insert({
+    conversationId,
     sender,
     content: content ? String(content).slice(0, 2000) : null,
     attachmentUrl: attachmentUrl || null,
     attachmentType: attachmentType || null,
-    createdAt: FieldValue.serverTimestamp(),
+    createdAt: new Date().toISOString(),
   });
+  if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 

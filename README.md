@@ -43,18 +43,19 @@ Create `.env.local` (for local) and set the same on Vercel (Project → Settings
 # Admin login
 ADMIN_PASSWORD=change-me
 
-# Firebase Admin (used by server-side APIs)
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_CLIENT_EMAIL=your-service-account@your-project-id.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+# Optional: service role key for server-side (recommended)
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Firebase Client (used by browser where needed)
-NEXT_PUBLIC_FIREBASE_API_KEY=...
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
-NEXT_PUBLIC_FIREBASE_APP_ID=...
+# Storage bucket name for chat uploads
+NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=uploads
 ```
 
 If these are missing in production, API routes like `/api/appointments` will return 500. Check Vercel → Logs to see any errors emitted by the API.
+
+## Database (Supabase)
+
+- Run the SQL in `supabase/schema.sql` on your Supabase project (SQL editor) to create tables and enable realtime.
+- Create a Storage bucket (default used: `uploads`) and add its name to `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET`.

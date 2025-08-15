@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBucket } from "@/lib/firebaseAdmin";
-import { v4 as uuidv4 } from "uuid";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,21 +11,17 @@ export async function POST(req: NextRequest) {
 
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const bucket = getBucket();
   const filename = `chat/${Date.now()}_${file.name}`;
-  const token = uuidv4();
-
-  const upload = bucket.file(filename);
-  await upload.save(buffer, {
-    contentType: file.type || "application/octet-stream",
-    metadata: { metadata: { firebaseStorageDownloadTokens: token } },
-    public: false,
-    resumable: false,
-  });
-
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const url = `https://firebasestorage.googleapis.com/v0/b/${projectId}.appspot.com/o/${encodeURIComponent(filename)}?alt=media&token=${token}`;
-  return NextResponse.json({ url, contentType: file.type, name: file.name });
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase.storage
+    .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads")
+    .upload(filename, buffer, { contentType: file.type || "application/octet-stream", upsert: false });
+  if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
+  const { data: signed, error: signErr } = await supabase.storage
+    .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads")
+    .createSignedUrl(data?.path || filename, 60 * 60 * 24 * 7); // 7 days
+  if (signErr) return NextResponse.json({ error: String(signErr.message) }, { status: 500 });
+  return NextResponse.json({ url: signed?.signedUrl, contentType: file.type, name: file.name });
 }
 
 

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/firebaseAdmin";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 
 export async function GET() {
-  const db = getDb();
-  const snap = await db.collection("conversations").orderBy("updatedAt", "desc").get();
-  const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  return NextResponse.json(list);
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .order("updatedAt", { ascending: false });
+  if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
+  return NextResponse.json(data || []);
 }
 
 

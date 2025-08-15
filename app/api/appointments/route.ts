@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firebaseAdmin";
-import { FieldValue } from "firebase-admin/firestore";
+import { getSupabaseAdminClient } from "@/lib/supabaseClient";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,16 +21,17 @@ export async function POST(req: NextRequest) {
     if (minutes < open || minutes > close) {
       return new NextResponse("Ngoài giờ làm việc (10:00–17:30)", { status: 400 });
     }
-    const db = getDb();
-    await db.collection("appointments").add({
+    const supabase = getSupabaseAdminClient();
+    const { error } = await supabase.from("appointments").insert({
       fullName,
       phone,
       email: email || null,
       note: note || null,
-      scheduledAt,
+      scheduledAt: scheduledAt.toISOString(),
       status: "unprocessed",
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: new Date().toISOString(),
     });
+    if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[api/appointments] POST error:", err);
