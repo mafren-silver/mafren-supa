@@ -7,10 +7,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function GET(_req: Request, { params }: any) {
+export async function GET(_req: Request, context: { params: Promise<{ path: string | string[] }> }) {
   const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads";
-  const raw = params?.path;
-  const segments = Array.isArray(raw) ? raw : [raw];
+  // Next 15: params may be async for dynamic APIs
+  const { path } = await context.params;
+  const segments = Array.isArray(path) ? path : [path];
   const objectPath = segments.join("/");
   if (!objectPath) return new Response("Not Found", { status: 404 });
   const supabase = getSupabaseAdminClient();

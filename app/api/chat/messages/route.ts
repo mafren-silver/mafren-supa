@@ -7,9 +7,9 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("messages")
-    .select("*")
-    .eq("conversationId", conversationId)
-    .order("createdAt", { ascending: true });
+    .select("id, conversationId:conversationid, sender, content, attachmentUrl:attachmenturl, attachmentType:attachmenttype, createdAt:createdat")
+    .eq("conversationid", conversationId)
+    .order("createdat", { ascending: true });
   if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
   return NextResponse.json(data || []);
 }
@@ -32,34 +32,36 @@ export async function POST(req: NextRequest) {
   if (sender === "CUSTOMER") {
     const { data: current } = await supabase
       .from("conversations")
-      .select("unreadForAdmin")
+      .select("unreadforadmin")
       .eq("id", conversationId)
       .single();
-    const nextUnread = (typeof current?.unreadForAdmin === "number" ? current.unreadForAdmin : 0) + 1;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const currentUnread = (current as any)?.unreadforadmin;
+    const nextUnread = (typeof currentUnread === "number" ? currentUnread : 0) + 1;
     await supabase
       .from("conversations")
       .update({
-        updatedAt: new Date().toISOString(),
-        unreadForAdmin: nextUnread,
-        lastMessagePreview: lastPreview,
+        updatedat: new Date().toISOString(),
+        unreadforadmin: nextUnread,
+        lastmessagepreview: lastPreview,
       })
       .eq("id", conversationId);
   } else {
     await supabase
       .from("conversations")
       .update({
-        updatedAt: new Date().toISOString(),
-        lastMessagePreview: lastPreview,
+        updatedat: new Date().toISOString(),
+        lastmessagepreview: lastPreview,
       })
       .eq("id", conversationId);
   }
   const { error } = await supabase.from("messages").insert({
-    conversationId,
+    conversationid: conversationId,
     sender,
     content: content ? String(content).slice(0, 2000) : null,
-    attachmentUrl: attachmentUrl || null,
-    attachmentType: attachmentType || null,
-    createdAt: new Date().toISOString(),
+    attachmenturl: attachmentUrl || null,
+    attachmenttype: attachmentType || null,
+    createdat: new Date().toISOString(),
   });
   if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
   return NextResponse.json({ ok: true });

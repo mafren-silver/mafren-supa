@@ -12,8 +12,8 @@ export async function GET() {
       const sendSnapshot = async () => {
         const { data } = await supabase
           .from("conversations")
-          .select("*")
-          .order("updatedAt", { ascending: false });
+          .select("id, customerName:customername, customerPhone:customerphone, customerEmail:customeremail, status, unreadForAdmin:unreadforadmin, lastMessagePreview:lastmessagepreview, createdAt:createdat, updatedAt:updatedat")
+          .order("updatedat", { ascending: false });
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data || [])}\n\n`)); } catch {}
       };
       channel

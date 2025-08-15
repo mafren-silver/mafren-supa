@@ -23,13 +23,13 @@ export async function POST(req: NextRequest) {
     }
     const supabase = getSupabaseAdminClient();
     const { error } = await supabase.from("appointments").insert({
-      fullName,
+      fullname: fullName,
       phone,
       email: email || null,
       note: note || null,
-      scheduledAt: scheduledAt.toISOString(),
+      scheduledat: scheduledAt.toISOString(),
       status: "unprocessed",
-      createdAt: new Date().toISOString(),
+      createdat: new Date().toISOString(),
     });
     if (error) throw error;
     return NextResponse.json({ ok: true });

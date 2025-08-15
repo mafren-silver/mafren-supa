@@ -19,14 +19,14 @@ export async function GET(req: NextRequest) {
       const sendSnapshot = async () => {
         const { data } = await supabase
           .from("messages")
-          .select("*")
-          .eq("conversationId", conversationId)
-          .order("createdAt", { ascending: true });
+          .select("id, conversationId:conversationid, sender, content, attachmentUrl:attachmenturl, attachmentType:attachmenttype, createdAt:createdat")
+          .eq("conversationid", conversationId)
+          .order("createdat", { ascending: true });
         const payload = JSON.stringify(data || []);
         try { controller.enqueue(encoder.encode(`data: ${payload}\n\n`)); } catch {}
       };
       channel
-        .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `conversationId=eq.${conversationId}` }, () => {
+        .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `conversationid=eq.${conversationId}` }, () => {
           void sendSnapshot();
         })
         .subscribe(async (status) => {

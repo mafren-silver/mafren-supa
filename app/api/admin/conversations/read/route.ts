@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdminClient();
     const { error } = await supabase
       .from("conversations")
-      .update({ unreadForAdmin: 0, updatedAt: new Date().toISOString() })
+      .update({ unreadforadmin: 0, updatedat: new Date().toISOString() })
       .eq("id", conversationId);
     if (error) throw error;
     return NextResponse.json({ ok: true });

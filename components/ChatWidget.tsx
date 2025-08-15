@@ -8,10 +8,14 @@ export default function ChatWidget() {
   const [convId, setConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [starting, setStarting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const lastLenRef = useRef(0);
   const sendingRef = useRef(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const zaloUrl = "https://zalo.me/0396682777"; // +84 396 682 777
   const instagramUrl = "https://www.instagram.com/mafren_jewelry/";
 
@@ -68,20 +72,68 @@ export default function ChatWidget() {
 
   async function sendAttachment(f: File) {
     if (!convId || !f) return;
-    const fd = new FormData();
-    fd.append("file", f);
-    const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
-    if (!up.ok) return;
-    const meta = await up.json();
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    await fetch("/api/chat/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId: convId, sender: "CUSTOMER", attachmentUrl: meta.url, attachmentType: meta.contentType }),
-    });
-    sendingRef.current = false;
-    new Audio("/audio/message_sent.mp3").play().catch(()=>{});
+    const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+    if (f.size > MAX_UPLOAD_BYTES) {
+      alert("Tệp quá lớn (tối đa 50MB). Vui lòng nén hoặc chọn tệp nhỏ hơn.");
+      return;
+    }
+    let toUpload: File = f;
+    try {
+      if (f.type.startsWith("image/") && f.size > 1024 * 1024) {
+        setUploading(true); setUploadLabel("Đang nén ảnh...");
+        // compress image to ~1MB using canvas
+        const img = document.createElement("img");
+        const url = URL.createObjectURL(f);
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = (e) => reject(e);
+          img.src = url;
+        });
+        const maxBytes = 1024 * 1024; // 1MB
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const scale = Math.sqrt(Math.min(1, (maxBytes / f.size)));
+          const w = Math.max(1, Math.floor(img.naturalWidth * scale));
+          const h = Math.max(1, Math.floor(img.naturalHeight * scale));
+          canvas.width = w; canvas.height = h;
+          ctx.drawImage(img, 0, 0, w, h);
+          const mime = f.type.startsWith("image/") ? f.type : "image/jpeg";
+          const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b || new Blob()), mime, 0.8));
+          if (blob.size <= maxBytes) {
+            toUpload = new File([blob], f.name, { type: mime });
+          }
+        }
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      // fallback: gửi nguyên bản nếu nén thất bại
+      console.warn("Compress failed, fallback to direct upload:", e);
+    }
+    try {
+      setUploadLabel("Đang tải lên..."); setUploading(true);
+      const fd = new FormData();
+      fd.append("file", toUpload);
+      const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
+      if (!up.ok) {
+        const msg = await up.text().catch(() => "");
+        throw new Error(msg || `Upload thất bại (${up.status})`);
+      }
+      const meta = await up.json();
+      if (sendingRef.current) return;
+      sendingRef.current = true;
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: convId, sender: "CUSTOMER", attachmentUrl: meta.url, attachmentType: meta.contentType }),
+      });
+      sendingRef.current = false;
+      new Audio("/audio/message_sent.mp3").play().catch(()=>{});
+    } catch (err) {
+      alert((err as Error).message || "Không thể tải tệp lên.");
+    } finally {
+      setUploading(false); setUploadLabel(null);
+    }
   }
 
   return (
@@ -94,10 +146,13 @@ export default function ChatWidget() {
       </button>
 
           {open && (
-        <div className="fixed bottom-20 right-5 z-40 w-[360px] max-w-[96vw] bg-black border border-white/15 shadow-xl">
+        <div className={`fixed z-40 bg-black border border-white/15 shadow-xl ${expanded ? 'bottom-5 right-5 w-[90vw] md:w-[540px]' : 'bottom-20 right-5 w-[360px] max-w-[96vw]'}`}>
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <div className="text-sm tracking-wide">Nhắn tin với MAFREN</div>
-            <button onClick={() => setOpen(false)} className="text-white/60 hover:text-white">✕</button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setExpanded((v) => !v)} className="text-white/60 hover:text-white" title={expanded ? 'Thu nhỏ' : 'Phóng to'}>{expanded ? '⤡' : '⤢'}</button>
+              <button onClick={() => setOpen(false)} className="text-white/60 hover:text-white">✕</button>
+            </div>
           </div>
 
           {!convId ? (
@@ -141,7 +196,7 @@ export default function ChatWidget() {
             </div>
           ) : (
             <div className="p-3 flex flex-col gap-2">
-              <div ref={listRef} className="h-64 overflow-auto space-y-2">
+              <div ref={listRef} className={`${expanded ? 'h-[70vh]' : 'h-64'} overflow-auto space-y-2`}>
                 {messages.map((m) => (
                   <div key={m.id} className={`max-w-[80%] ${m.sender === "CUSTOMER" ? "self-end ml-auto text-right" : ""}`}>
                     <div className={`inline-block px-3 py-2 ${m.sender === "CUSTOMER" ? "bg-white text-black" : "bg-white/10"}`}>
@@ -149,7 +204,9 @@ export default function ChatWidget() {
                       {m.attachmentUrl ? (
                         m.attachmentType?.startsWith("image/") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={m.attachmentUrl} alt="attachment" className="max-w-[200px] mt-1" />
+                          <img src={m.attachmentUrl} alt="attachment" className="max-w-[200px] mt-1 cursor-zoom-in" onClick={() => setPreviewUrl(m.attachmentUrl || null)} />
+                        ) : m.attachmentType?.startsWith("video/") ? (
+                          <video src={m.attachmentUrl || undefined} controls className="max-w-[220px] mt-1 rounded" />
                         ) : (
                           <a href={m.attachmentUrl} target="_blank" rel="noreferrer" className="underline">Tệp đính kèm</a>
                         )
@@ -171,13 +228,31 @@ export default function ChatWidget() {
                     }
                   }}
                 />
-                <label className="px-3 py-2 border border-white/20 cursor-pointer text-sm">+
-                  <input type="file" className="hidden" onChange={(e) => e.target.files && sendAttachment(e.target.files[0])} />
+                <label className={`px-3 py-2 border border-white/20 cursor-pointer text-sm ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>+
+                  <input type="file" accept="image/*,video/*" className="hidden" disabled={uploading} onChange={(e) => e.target.files && sendAttachment(e.target.files[0])} />
                 </label>
-                <button onClick={send} className="px-4 py-2 bg-white text-black hover:opacity-90">Gửi</button>
+                <button onClick={send} disabled={uploading} className={`px-4 py-2 bg-white text-black hover:opacity-90 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>Gửi</button>
               </div>
+              {uploading && (
+                <div className="flex items-center gap-2 text-xs text-white/80 mt-1">
+                  <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <span>{uploadLabel || 'Đang xử lý...'}</span>
+                </div>
+              )}
             </div>
           )}
+        </div>
+      )}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onClick={() => setPreviewUrl(null)}>
+          <div className="relative max-w-[70vw] max-h-[70vh]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewUrl} alt="preview" className="max-w-[70vw] max-h-[70vh] object-contain" />
+            <div className="absolute top-2 right-2 flex gap-2">
+              <a href={previewUrl} download className="px-3 py-1 bg-white text-black text-xs">Tải xuống</a>
+              <button onClick={() => setPreviewUrl(null)} className="px-3 py-1 bg-white text-black text-xs">Đóng</button>
+            </div>
+          </div>
         </div>
       )}
     </>

@@ -11,12 +11,11 @@ export async function GET() {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const sendSnapshot = async () => {
-        type Row = { id: string; fullName: string; phone: string; email: string | null; note: string | null; scheduledAt: string; status: string | null; createdAt: string | null };
         const { data } = await supabase
           .from("appointments")
-          .select("*")
-          .order("scheduledAt", { ascending: false });
-        const list = ((data as Row[] | null) || []).map((row) => ({ ...row, status: row.status || "unprocessed" }));
+          .select("id, fullName:fullname, phone, email, note, scheduledAt:scheduledat, status, createdAt:createdat")
+          .order("scheduledat", { ascending: false });
+        const list = ((data as Array<Record<string, unknown>> | null) || []).map((row) => ({ ...row, status: (row.status as string | null) || "unprocessed" }));
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(list)}\n\n`)); } catch {}
       };
       channel

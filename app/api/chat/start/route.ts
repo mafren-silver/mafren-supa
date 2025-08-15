@@ -10,13 +10,13 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from("conversations")
     .insert({
-      customerName,
-      customerPhone,
-      customerEmail: customerEmail || null,
+      customername: customerName,
+      customerphone: customerPhone,
+      customeremail: customerEmail || null,
       status: "OPEN",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      unreadForAdmin: 0,
+      createdat: new Date().toISOString(),
+      updatedat: new Date().toISOString(),
+      unreadforadmin: 0,
     })
     .select("id")
     .single();

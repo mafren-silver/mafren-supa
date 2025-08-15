@@ -38,8 +38,10 @@ export default function AdminHome() {
   const [appointments, setAppointments] = useState<Appt[]>([]);
   const [convFilter, setConvFilter] = useState<"active" | "archived" | "all">("active");
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Poll conversations every 5s (and immediately)
   useEffect(() => {
@@ -104,19 +106,21 @@ export default function AdminHome() {
 
   async function send() {
     if (!selectedId) return;
-    const content = inputRef.current?.value?.trim();
-    if (!content) return;
+    const input = inputRef.current;
+    const content = input?.value ?? "";
+    const trimmed = content.trim();
+    if (!trimmed) { if (input) input.value = ""; return; }
     if (sendingRef.current) return;
     sendingRef.current = true;
-    inputRef.current!.value = "";
+    if (input) input.value = "";
     // optimistic
     const optimisticId = `local-${Date.now()}`;
-    setMessages((prev) => [...prev, { id: optimisticId, sender: "ADMIN", content, attachmentUrl: null, attachmentType: null }]);
+    setMessages((prev) => [...prev, { id: optimisticId, sender: "ADMIN", content: trimmed, attachmentUrl: null, attachmentType: null }]);
     try {
       await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: selectedId, sender: "ADMIN", content }),
+        body: JSON.stringify({ conversationId: selectedId, sender: "ADMIN", content: trimmed }),
       });
       // refresh
       const res = await fetch(`/api/chat/messages?conversationId=${selectedId}`, { cache: "no-store" });
@@ -124,6 +128,85 @@ export default function AdminHome() {
       await fetch("/api/admin/conversations/read", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ conversationId: selectedId }) }).catch(() => {});
     } catch {}
     sendingRef.current = false;
+  }
+
+  async function sendAttachment(f: File) {
+    if (!selectedId || !f) return;
+    if (f.size > 50 * 1024 * 1024) {
+      alert('Tệp quá lớn (tối đa 50MB). Vui lòng nén hoặc chọn tệp nhỏ hơn.');
+      return;
+    }
+    // Video >50MB sẽ được nén xuống ~25MB bằng ffmpeg.wasm (xử lý phía client)
+    let toUpload: File = f;
+    try {
+      if (f.type.startsWith("video/") && f.size > 50 * 1024 * 1024) {
+        const { createFFmpeg, fetchFile } = await import("@ffmpeg/ffmpeg");
+        const ffmpeg = createFFmpeg({ log: false, corePath: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js" });
+        await ffmpeg.load();
+        const v = document.createElement("video");
+        const tmpUrl = URL.createObjectURL(f);
+        const duration: number = await new Promise((resolve, reject) => {
+          v.preload = "metadata";
+          v.onloadedmetadata = () => resolve(Math.max(1, v.duration || 1));
+          v.onerror = () => reject(new Error("metadata"));
+          v.src = tmpUrl;
+        });
+        URL.revokeObjectURL(tmpUrl);
+        const targetBitsPerSec = Math.max(300_000, Math.floor((25 * 1024 * 1024 * 8) / duration) - 128_000);
+        const targetKbps = Math.floor(targetBitsPerSec / 1000);
+        await ffmpeg.FS("writeFile", "input", await fetchFile(f));
+        await ffmpeg.run(
+          "-i", "input",
+          "-vcodec", "libx264",
+          "-preset", "veryfast",
+          "-b:v", `${targetKbps}k`,
+          "-maxrate", `${targetKbps}k`,
+          "-bufsize", `${Math.max(1000, Math.floor(targetKbps/2))}k`,
+          "-acodec", "aac",
+          "-b:a", "128k",
+          "-movflags", "faststart",
+          "output.mp4"
+        );
+        const data = ffmpeg.FS("readFile", "output.mp4");
+        toUpload = new File([data.buffer], (f.name.replace(/\.[^.]+$/, "") || "video") + ".mp4", { type: "video/mp4" });
+      } else if (f.type.startsWith("image/") && f.size > 1024 * 1024) {
+        // Nén ảnh xuống khoảng <= 1MB bằng canvas
+        const img = document.createElement("img");
+        const url = URL.createObjectURL(f);
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = (e) => reject(e);
+          img.src = url;
+        });
+        const maxBytes = 1024 * 1024;
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const scale = Math.sqrt(Math.min(1, maxBytes / f.size));
+          const w = Math.max(1, Math.floor(img.naturalWidth * scale));
+          const h = Math.max(1, Math.floor(img.naturalHeight * scale));
+          canvas.width = w; canvas.height = h;
+          ctx.drawImage(img, 0, 0, w, h);
+          const mime = f.type.startsWith("image/") ? f.type : "image/jpeg";
+          const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b || new Blob()), mime, 0.8));
+          if (blob.size <= maxBytes) toUpload = new File([blob], f.name, { type: mime });
+        }
+        URL.revokeObjectURL(url);
+      }
+    } catch {}
+    const fd = new FormData();
+    fd.append("file", toUpload);
+    const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
+    if (!up.ok) return;
+    const meta = await up.json();
+    await fetch("/api/chat/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: selectedId, sender: "ADMIN", attachmentUrl: meta.url, attachmentType: meta.contentType }),
+    });
+    // refresh messages
+    const res = await fetch(`/api/chat/messages?conversationId=${selectedId}`, { cache: "no-store" });
+    if (res.ok) setMessages(await res.json());
   }
 
   async function archiveSelected() {
@@ -179,8 +262,20 @@ export default function AdminHome() {
             <div ref={listRef} className="flex-1 overflow-auto p-3 space-y-2">
               {messages.map((m) => (
                 <div key={m.id} className={`max-w-[80%] ${m.sender === "ADMIN" ? "self-end ml-auto text-right" : ""}`}>
-                  <div className={`inline-block px-3 py-2 ${m.sender === "ADMIN" ? "bg-white text-black" : "bg-white/10"}`}>
+                  <div className={`inline-block px-3 py-2 space-y-1 ${m.sender === "ADMIN" ? "bg-white text-black" : "bg-white/10"}`}>
                     <div className="text-xs opacity-60">{m.sender === "ADMIN" ? "Bạn (Admin)" : "Khách"}</div>
+                    {m.attachmentUrl ? (
+                      m.attachmentType?.startsWith("image/") ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.attachmentUrl} alt="attachment" className="max-w-[260px] rounded cursor-zoom-in" onClick={() => setPreviewUrl(m.attachmentUrl || null)} />
+                      ) : m.attachmentType?.startsWith("video/") ? (
+                        <video src={m.attachmentUrl || undefined} controls className="max-w-[320px] rounded" />
+                      ) : (
+                        <a href={m.attachmentUrl} target="_blank" rel="noreferrer" className="underline break-all text-xs">
+                          Tệp đính kèm
+                        </a>
+                      )
+                    ) : null}
                     {m.content ? <div>{m.content}</div> : null}
                   </div>
                 </div>
@@ -192,12 +287,19 @@ export default function AdminHome() {
                 placeholder="Nhập tin nhắn..."
                 className="bg-transparent border border-white/20 px-4 py-3 flex-1"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  // Tránh gửi khi đang gõ tiếng Việt (IME composing)
+                  // @ts-expect-error: nativeEvent is available at runtime
+                  const composing = e.isComposing || e.nativeEvent?.isComposing || false;
+                  if (e.key === "Enter" && !e.shiftKey && !composing) {
                     e.preventDefault();
                     send();
                   }
                 }}
               />
+              <label className="px-3 py-2 border border-white/20 cursor-pointer text-sm" title="Tải lên ảnh/video">
+                +
+                <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => e.target.files && sendAttachment(e.target.files[0])} />
+              </label>
               <button onClick={() => { send(); }} className="px-5 py-3 bg-white text-black hover:opacity-80">Gửi</button>
               <div className="flex items-center gap-2">
                 <button onClick={archiveSelected} className="px-3 py-2 border border-white/20 text-sm">Lưu trữ</button>
@@ -254,6 +356,19 @@ export default function AdminHome() {
           </table>
         </div>
       </div>
+
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onClick={() => setPreviewUrl(null)}>
+          <div className="relative max-w-[70vw] max-h-[70vh]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewUrl} alt="preview" className="max-w-[70vw] max-h-[70vh] object-contain" />
+            <div className="absolute top-2 right-2 flex gap-2">
+              <a href={previewUrl} download className="px-3 py-1 bg-white text-black text-xs">Tải xuống</a>
+              <button onClick={() => setPreviewUrl(null)} className="px-3 py-1 bg-white text-black text-xs">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
