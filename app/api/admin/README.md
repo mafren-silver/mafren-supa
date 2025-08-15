@@ -1,8 +1,8 @@
 Environment variables required:
 
 - ADMIN_PASSWORD
-- FIREBASE_PROJECT_ID
-- FIREBASE_CLIENT_EMAIL
-- FIREBASE_PRIVATE_KEY (giữ \n đúng dòng khi dán key)
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY (recommended for server-side)
 
 

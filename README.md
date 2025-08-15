@@ -44,10 +44,10 @@ Create `.env.local` (for local) and set the same on Vercel (Project → Settings
 ADMIN_PASSWORD=change-me
 
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=your-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SUPABASE_URL=https://camjmeyydgpwlwukxvti.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhbWptZXl5ZGdwd2x3dWt4dnRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyMzYyMzEsImV4cCI6MjA3MDgxMjIzMX0.9DSeF5uMjp14yeCdixNHPj-Qt0A-BW_1uVpf_3VgZR4
 # Optional: service role key for server-side (recommended)
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_SERVICE_ROLE_KEY=
 
 # Storage bucket name for chat uploads
 NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=uploads
