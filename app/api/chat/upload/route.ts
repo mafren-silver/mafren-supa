@@ -13,15 +13,14 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(arrayBuffer);
   const filename = `chat/${Date.now()}_${file.name}`;
   const supabase = getSupabaseAdminClient();
+  const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads";
   const { data, error } = await supabase.storage
-    .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads")
+    .from(bucket)
     .upload(filename, buffer, { contentType: file.type || "application/octet-stream", upsert: false });
   if (error) return NextResponse.json({ error: String(error.message) }, { status: 500 });
-  const { data: signed, error: signErr } = await supabase.storage
-    .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads")
-    .createSignedUrl(data?.path || filename, 60 * 60 * 24 * 7); // 7 days
-  if (signErr) return NextResponse.json({ error: String(signErr.message) }, { status: 500 });
-  return NextResponse.json({ url: signed?.signedUrl, contentType: file.type, name: file.name });
+  const path = encodeURIComponent(data?.path || filename);
+  const url = `/api/files/${path}`; // permanent proxy link
+  return NextResponse.json({ url, contentType: file.type, name: file.name });
 }
 
 
