@@ -129,22 +129,19 @@ export default function ChatWidget() {
     }
     try {
       setUploadLabel("Đang tải lên..."); setUploading(true);
-      // Direct upload to Supabase to avoid Vercel function payload limits
+      // Option A: Signed upload URL (server signs; client uploads with PUT) to satisfy strict RLS
+      const sign = await fetch('/api/storage/upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: toUpload.name, contentType: toUpload.type }) });
+      if (!sign.ok) throw new Error(await sign.text());
+      const { path, token, contentType } = await sign.json();
       const supabase = getSupabaseClient();
-      const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads";
-      const original = toUpload.name || "upload";
-      const safeBase = original
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Za-z0-9._-]/g, "_")
-        .replace(/_+/g, "_")
-        .slice(0, 80);
-      const path = `chat/${Date.now()}_${safeBase || "file"}`;
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(path, toUpload, { contentType: toUpload.type || "application/octet-stream", upsert: false });
-      if (error) throw new Error(error.message);
-      const url = `/api/files/${encodeURIComponent(data?.path || path)}`;
+      const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'uploads';
+      const uploadRes = await fetch(`https://camjmeyydgpwlwukxvti.supabase.co/storage/v1/object/upload/sign/${bucket}/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType || toUpload.type || 'application/octet-stream' },
+        body: toUpload,
+      });
+      if (!uploadRes.ok) throw new Error('Upload failed');
+      const url = `/api/files/${encodeURIComponent(path)}`;
       if (sendingRef.current) return;
       sendingRef.current = true;
       await fetch("/api/chat/messages", {
