@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 
 type Msg = { id: string; sender: "CUSTOMER" | "ADMIN"; content: string | null; attachmentUrl?: string | null; attachmentType?: string | null; createdAt?: unknown };
 
@@ -112,20 +113,28 @@ export default function ChatWidget() {
     }
     try {
       setUploadLabel("Đang tải lên..."); setUploading(true);
-      const fd = new FormData();
-      fd.append("file", toUpload);
-      const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
-      if (!up.ok) {
-        const msg = await up.text().catch(() => "");
-        throw new Error(msg || `Upload thất bại (${up.status})`);
-      }
-      const meta = await up.json();
+      // Direct upload to Supabase to avoid Vercel function payload limits
+      const supabase = getSupabaseClient();
+      const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "uploads";
+      const original = toUpload.name || "upload";
+      const safeBase = original
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Za-z0-9._-]/g, "_")
+        .replace(/_+/g, "_")
+        .slice(0, 80);
+      const path = `chat/${Date.now()}_${safeBase || "file"}`;
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(path, toUpload, { contentType: toUpload.type || "application/octet-stream", upsert: false });
+      if (error) throw new Error(error.message);
+      const url = `/api/files/${encodeURIComponent(data?.path || path)}`;
       if (sendingRef.current) return;
       sendingRef.current = true;
       await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: convId, sender: "CUSTOMER", attachmentUrl: meta.url, attachmentType: meta.contentType }),
+        body: JSON.stringify({ conversationId: convId, sender: "CUSTOMER", attachmentUrl: url, attachmentType: toUpload.type }),
       });
       sendingRef.current = false;
       new Audio("/audio/message_sent.mp3").play().catch(()=>{});
