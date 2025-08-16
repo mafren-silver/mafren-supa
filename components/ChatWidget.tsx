@@ -19,10 +19,25 @@ export default function ChatWidget() {
   const [expanded, setExpanded] = useState(false);
   const zaloUrl = "https://zalo.me/0396682777"; // +84 396 682 777
   const instagramUrl = "https://www.instagram.com/mafren_jewelry/";
+  const STORAGE_KEY = "mafren_conversation_id";
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open]);
+
+  useEffect(() => {
+    // resume conversation from localStorage if exists
+    if (typeof window !== 'undefined' && !convId) {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) setConvId(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (convId) window.localStorage.setItem(STORAGE_KEY, convId);
+    else window.localStorage.removeItem(STORAGE_KEY);
+  }, [convId]);
 
   useEffect(() => {
     if (!convId) return;
@@ -52,6 +67,7 @@ export default function ChatWidget() {
     if (res.ok) {
       const data = await res.json();
       setConvId(data.id);
+      try { window.localStorage.setItem(STORAGE_KEY, data.id); } catch {}
     }
   }
 
@@ -145,6 +161,12 @@ export default function ChatWidget() {
     }
   }
 
+  function endChat() {
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch {}
+    setConvId(null);
+    setMessages([]);
+  }
+
   return (
     <>
       <button
@@ -159,6 +181,9 @@ export default function ChatWidget() {
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <div className="text-sm tracking-wide">Nhắn tin với MAFREN</div>
             <div className="flex items-center gap-2">
+              {convId && (
+                <button onClick={endChat} className="text-white/60 hover:text-white text-xs" title="Kết thúc chat">↺</button>
+              )}
               <button onClick={() => setExpanded((v) => !v)} className="text-white/60 hover:text-white" title={expanded ? 'Thu nhỏ' : 'Phóng to'}>{expanded ? '⤡' : '⤢'}</button>
               <button onClick={() => setOpen(false)} className="text-white/60 hover:text-white">✕</button>
             </div>
