@@ -136,40 +136,9 @@ export default function AdminHome() {
       alert('Tệp quá lớn (tối đa 50MB). Vui lòng nén hoặc chọn tệp nhỏ hơn.');
       return;
     }
-    // Video >50MB sẽ được nén xuống ~25MB bằng ffmpeg.wasm (xử lý phía client)
     let toUpload: File = f;
     try {
-      if (f.type.startsWith("video/") && f.size > 50 * 1024 * 1024) {
-        const { createFFmpeg, fetchFile } = await import("@ffmpeg/ffmpeg");
-        const ffmpeg = createFFmpeg({ log: false, corePath: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js" });
-        await ffmpeg.load();
-        const v = document.createElement("video");
-        const tmpUrl = URL.createObjectURL(f);
-        const duration: number = await new Promise((resolve, reject) => {
-          v.preload = "metadata";
-          v.onloadedmetadata = () => resolve(Math.max(1, v.duration || 1));
-          v.onerror = () => reject(new Error("metadata"));
-          v.src = tmpUrl;
-        });
-        URL.revokeObjectURL(tmpUrl);
-        const targetBitsPerSec = Math.max(300_000, Math.floor((25 * 1024 * 1024 * 8) / duration) - 128_000);
-        const targetKbps = Math.floor(targetBitsPerSec / 1000);
-        await ffmpeg.FS("writeFile", "input", await fetchFile(f));
-        await ffmpeg.run(
-          "-i", "input",
-          "-vcodec", "libx264",
-          "-preset", "veryfast",
-          "-b:v", `${targetKbps}k`,
-          "-maxrate", `${targetKbps}k`,
-          "-bufsize", `${Math.max(1000, Math.floor(targetKbps/2))}k`,
-          "-acodec", "aac",
-          "-b:a", "128k",
-          "-movflags", "faststart",
-          "output.mp4"
-        );
-        const data = ffmpeg.FS("readFile", "output.mp4");
-        toUpload = new File([data.buffer], (f.name.replace(/\.[^.]+$/, "") || "video") + ".mp4", { type: "video/mp4" });
-      } else if (f.type.startsWith("image/") && f.size > 1024 * 1024) {
+      if (f.type.startsWith("image/") && f.size > 1024 * 1024) {
         // Nén ảnh xuống khoảng <= 1MB bằng canvas
         const img = document.createElement("img");
         const url = URL.createObjectURL(f);
