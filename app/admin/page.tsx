@@ -163,16 +163,29 @@ export default function AdminHome() {
         URL.revokeObjectURL(url);
       }
     } catch {}
-    const fd = new FormData();
-    fd.append("file", toUpload);
-    const up = await fetch("/api/chat/upload", { method: "POST", body: fd });
-    if (!up.ok) return;
-    const meta = await up.json();
-    await fetch("/api/chat/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId: selectedId, sender: "ADMIN", attachmentUrl: meta.url, attachmentType: meta.contentType }),
-    });
+    // Use signed upload URL to avoid Vercel 413 and satisfy RLS
+    try {
+      const sign = await fetch('/api/storage/upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: toUpload.name, contentType: toUpload.type }) });
+      if (!sign.ok) throw new Error(await sign.text());
+      const { path, token, contentType } = await sign.json();
+      const bucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'uploads';
+      const base = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+      const uploadRes = await fetch(`${base}/storage/v1/object/upload/sign/${bucket}/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType || toUpload.type || 'application/octet-stream' },
+        body: toUpload,
+      });
+      if (!uploadRes.ok) throw new Error('Upload failed');
+      const url = `/api/files/${encodeURIComponent(path)}`;
+      await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: selectedId, sender: "ADMIN", attachmentUrl: url, attachmentType: toUpload.type }),
+      });
+    } catch (e) {
+      alert((e as Error).message || 'Không thể tải tệp lên.');
+      return;
+    }
     // refresh messages
     const res = await fetch(`/api/chat/messages?conversationId=${selectedId}`, { cache: "no-store" });
     if (res.ok) setMessages(await res.json());
