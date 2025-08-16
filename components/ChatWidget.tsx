@@ -39,6 +39,21 @@ export default function ChatWidget() {
     else window.localStorage.removeItem(STORAGE_KEY);
   }, [convId]);
 
+  // Fetch existing messages immediately after we have a conversation id
+  useEffect(() => {
+    if (!convId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/messages?conversationId=${encodeURIComponent(convId)}`);
+        if (res.ok) {
+          const data = (await res.json()) as Msg[];
+          lastLenRef.current = data.length;
+          setMessages(data);
+        }
+      } catch {}
+    })();
+  }, [convId]);
+
   useEffect(() => {
     if (!convId) return;
     const sse = new EventSource(`/api/chat/stream?conversationId=${convId}`);
